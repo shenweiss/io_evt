@@ -203,7 +203,7 @@ def load_events_from_matfiles(ez_top_out_dir, original_chanlist, rec_start_time)
     events = set()
     for filename in os.listdir(ez_top_out_dir):
         if filename != '.keep':
-            events_matfile = ez_top_out_dir + filename
+            events_matfile = "{dir}/{file}".format(dir=ez_top_out_dir, file=filename)
             if '_mp_' in events_matfile:
                 chanlist_varname = 'monopolar_chanlist'
             elif '_bp_' in events_matfile:
