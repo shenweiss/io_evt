@@ -203,13 +203,13 @@ def load_events_from_matfiles(ez_top_out_dir, original_chanlist, rec_start_time)
     events = set()
     for filename in os.listdir(ez_top_out_dir):
         if filename != '.keep':
-            events_matfile = "{dir}/{file}".format(dir=ez_top_out_dir, file=filename)
+            events_matfile = ez_top_out_dir + filename
             if '_mp_' in events_matfile:
                 chanlist_varname = 'monopolar_chanlist'
             elif '_bp_' in events_matfile:
                 chanlist_varname = 'bipolar_chanlist'
             else:
-                print("Error in xml_writer xml_append_annotations") #temporal
+                print("Error in xml_writer xml_append_annotations") 
             ripple_subkinds = ["RonO", "TRonS"]
             fripple_subkinds = ["ftRonO", "ftTRonS"]
             spike_subkinds = ["TRonS", "ftTRonS", "FRonS", "ftFRonS"]
@@ -217,17 +217,19 @@ def load_events_from_matfiles(ez_top_out_dir, original_chanlist, rec_start_time)
             var_names = subkinds.append(chanlist_varname)
             matfile_vars = scipy.io.loadmat(events_matfile, variable_names=var_names)
             modified_chanlist = matfile_vars[chanlist_varname] 
+            blocknum=int(matfile_vars['metadata']['file_block'])
+            rec_start_time_adj = (rec_start_time + timedelta(seconds=((blocknum-1)*600))) #v.0.0.1 adjust for file block fixed at 600 seconds
 
             _add_events(events, matfile_vars, config.ripple_kind, ripple_subkinds, 
-                        modified_chanlist, original_chanlist, rec_start_time, 
+                        modified_chanlist, original_chanlist, rec_start_time_adj, 
                         config.ripple_on_offset, config.ripple_off_offset)
            
             _add_events(events, matfile_vars, config.fastRipple_kind, fripple_subkinds, 
-                        modified_chanlist, original_chanlist, rec_start_time, 
+                        modified_chanlist, original_chanlist, rec_start_time_adj, 
                         config.fripple_on_offset, config.fripple_off_offset)
            
             _add_events(events, matfile_vars, config.spike_kind, spike_subkinds, 
-                        modified_chanlist, original_chanlist, rec_start_time, 
+                        modified_chanlist, original_chanlist, rec_start_time_adj, 
                         config.spike_on_offset, config.spike_off_offset)
 
     return events
