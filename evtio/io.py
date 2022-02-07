@@ -9,9 +9,10 @@ from dateutil import parser as dateutil_parser
 
 class Event():
     
-    def __init__(self, kind, ch_id, begin, end):
+    def __init__(self, kind, ch_id, ch_id_inv, begin, end):
         self._kind = kind
         self._ch_id = ch_id
+        self._ch_id_inv = ch_id_inv
         self._begin = begin
         self._end = end
 
@@ -20,6 +21,9 @@ class Event():
 
     def ch_id(self):
         return self._ch_id
+
+    def ch_id_inv(self):
+        return self._ch_id_inv
 
     def begin(self):
         return self._begin
@@ -132,8 +136,9 @@ class EventFile():
             begin = dateutil_parser.parse( event.findtext('Begin') )
             end = dateutil_parser.parse( event.findtext('End') )
             ch_id = int( event.findtext('DerivationInvID') )
+            ch_id_inv = int( event.findtext('DerivationNotInvID') )
             kind = config.event_kind_by_guid[ event.findtext('EventDefinitionGuid') ]
-            events.add( Event(kind, ch_id, begin, end) )
+            events.add( Event(kind, ch_id, ch_id_inv, begin, end) )
 
         return events
 
@@ -154,7 +159,7 @@ class EventFile():
         eTree.SubElement(evt, "Value").text = "0"
         eTree.SubElement(evt, "ExtraValue").text = "0"
         eTree.SubElement(evt, "DerivationInvID").text = str( anEvent.ch_id() ) #Starting from 1. 
-        eTree.SubElement(evt, "DerivationNotInvID").text = "0" #0 is referential. Channel num if bipolar. 
+        eTree.SubElement(evt, "DerivationNotInvID").text = str( anEvent.ch_id_inv() ) 
         eTree.SubElement(evt, "CreatedBy").text = username
         eTree.SubElement(evt, "CreatedDate").text = now
         eTree.SubElement(evt, "UpdatedBy").text = username
@@ -172,34 +177,45 @@ def read_evt(evt_fname):
 def write_evt(evt_file):
     evt_file.tree.write(evt_file.name(), encoding="utf-8", xml_declaration=True, pretty_print=True)
 
-
-#################  TEMPORARY FUNCITONS FOR TRANSLATION FROM MATLAB ##############
-
-#Temporary due to translation, to load events from matfiles
 def _add_events(events, matfile_vars, kind, subkinds, modified_chanlist, 
                 original_chanlist, rec_start_time, on_offset, off_offset):
     for subkind in subkinds:
-        #(Pdb) events['TRonS']  
-        # import pdb; pdb.set_trace()
-        #array([[(array([], shape=(0, 0), dtype=uint8), array([], shape=(0, 0), dtype=uint8), array([], shape=(0, 0), dtype=uint8), array([], shape=(0, 0), dtype=uint8), array([], shape=(0, 0), dtype=uint8), array([], shape=(0, 0), dtype=uint8), array([], shape=(0, 0), dtype=uint8), array([], shape=(0, 0), dtype=uint8))]],
-        #dtype=[('channel', 'O'), ('freq_av', 'O'), ('freq_pk', 'O'), ('power_av', 'O'), ('power_pk', 'O'), ('duration', 'O'), ('start_t', 'O'), ('finish_t', 'O')])
-        #Para acceder al arreglo de freq_pk tenes que hacer events[0][0][2] 
         channels = matfile_vars[subkind][0][0][0]
         if len(channels) > 0:
             for i in range(len(channels)):
                 modified_channel_idx = channels[i][0] #index in modified_chanlist
                 ch_name = modified_chanlist[0][modified_channel_idx - 1][0]
                 ch_id = original_chanlist.index(ch_name) + 1 #assuming that start by 1 
-                
+                ch_id_inv = 0
                 start_t = matfile_vars[subkind][0][0][6][i][0]
                 finish_t = matfile_vars[subkind][0][0][7][i][0]
                 begin = _fix_format(rec_start_time + timedelta(seconds=start_t)+on_offset)
                 end = _fix_format(rec_start_time + timedelta(seconds=finish_t)+off_offset)
 
-                events.add( Event(kind, ch_id, begin, end) )
+                events.add( Event(kind, ch_id, ch_id_inv, begin, end) )
+
+def _add_events_bp(events, matfile_vars, kind, subkinds, modified_chanlist, #need to correct for new BP channels
+                original_chanlist, bp_pairs, m2bp, rec_start_time, on_offset, off_offset):
+    for subkind in subkinds:
+        channels = matfile_vars[subkind][0][0][0]
+        if len(channels) > 0:
+            for i in range(len(channels)):
+                modified_channel_idx = channels[i][0] #index in modified_chanlist
+                ch_name = modified_chanlist[0][modified_channel_idx - 1][0]
+                ch_id = original_chanlist.index(ch_name) + 1 #assuming that start by 1
+                if ch_name in m2bp:
+                    ch_id_inv = 0
+                else:
+                    ch_id_inv = bp_pairs[ch_id-1] + 1 
+                start_t = matfile_vars[subkind][0][0][6][i][0]
+                finish_t = matfile_vars[subkind][0][0][7][i][0]
+                begin = _fix_format(rec_start_time + timedelta(seconds=start_t)+on_offset)
+                end = _fix_format(rec_start_time + timedelta(seconds=finish_t)+off_offset)
+
+                events.add( Event(kind, ch_id, ch_id_inv, begin, end) )
 
 #loads events from matlab structures and returns a set of Events
-def load_events_from_matfiles(ez_top_out_dir, original_chanlist, rec_start_time):
+def load_events_from_matfiles(ez_top_out_dir, original_chanlist, bp_pairs, rec_start_time):
     events = set()
     for filename in os.listdir(ez_top_out_dir):
         if filename != '.keep':
@@ -219,18 +235,38 @@ def load_events_from_matfiles(ez_top_out_dir, original_chanlist, rec_start_time)
             modified_chanlist = matfile_vars[chanlist_varname] 
             blocknum=int(matfile_vars['metadata']['file_block'])
             rec_start_time_adj = (rec_start_time + timedelta(seconds=((blocknum-1)*600))) #v.0.0.1 adjust for file block fixed at 600 seconds
-
-            _add_events(events, matfile_vars, config.ripple_kind, ripple_subkinds, 
-                        modified_chanlist, original_chanlist, rec_start_time_adj, 
-                        config.ripple_on_offset, config.ripple_off_offset)
+            m2bp_1=matfile_vars['metadata']['hf_bad_m']
+            m2bp_2=matfile_vars['metadata']['hf_bad_m2']
+            m2bp=[]
+            for x in range(len(m2bp_1[0][0][0])):
+                m2bp.append(m2bp_1[0][0][0][x][0])
+            for x in range(len(m2bp_2[0][0][0])):
+                m2bp.append(m2bp_2[0][0][0][x][0])
            
-            _add_events(events, matfile_vars, config.fastRipple_kind, fripple_subkinds, 
-                        modified_chanlist, original_chanlist, rec_start_time_adj, 
-                        config.fripple_on_offset, config.fripple_off_offset)
-           
-            _add_events(events, matfile_vars, config.spike_kind, spike_subkinds, 
-                        modified_chanlist, original_chanlist, rec_start_time_adj, 
-                        config.spike_on_offset, config.spike_off_offset)
+            if chanlist_varname == 'monopolar_chanlist':
+                _add_events(events, matfile_vars, config.ripple_kind, ripple_subkinds, 
+                            modified_chanlist, original_chanlist, rec_start_time_adj, 
+                            config.ripple_on_offset, config.ripple_off_offset)
+                
+                _add_events(events, matfile_vars, config.fastRipple_kind, fripple_subkinds, 
+                            modified_chanlist, original_chanlist, rec_start_time_adj, 
+                            config.fripple_on_offset, config.fripple_off_offset)
+                
+                _add_events(events, matfile_vars, config.spike_kind, spike_subkinds, 
+                            modified_chanlist, original_chanlist, rec_start_time_adj, 
+                            config.spike_on_offset, config.spike_off_offset)
+            else:
+                _add_events_bp(events, matfile_vars, config.ripple_kind, ripple_subkinds, 
+                            modified_chanlist, original_chanlist, bp_pairs, m2bp, rec_start_time_adj, 
+                            config.ripple_on_offset, config.ripple_off_offset)
+            
+                _add_events_bp(events, matfile_vars, config.fastRipple_kind, fripple_subkinds, 
+                            modified_chanlist, original_chanlist, bp_pairs, m2bp, rec_start_time_adj, 
+                            config.fripple_on_offset, config.fripple_off_offset)
+            
+                _add_events_bp(events, matfile_vars, config.spike_kind, spike_subkinds, 
+                            modified_chanlist, original_chanlist, bp_pairs, m2bp,rec_start_time_adj, 
+                            config.spike_on_offset, config.spike_off_offset)
 
     return events
 
