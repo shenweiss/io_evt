@@ -235,15 +235,14 @@ def load_events_from_matfiles(ez_top_out_dir, original_chanlist, bp_pairs, rec_s
             modified_chanlist = matfile_vars[chanlist_varname] 
             blocknum=int(matfile_vars['metadata']['file_block'])
             rec_start_time_adj = (rec_start_time + timedelta(seconds=((blocknum-1)*600))) #v.0.0.1 adjust for file block fixed at 600 seconds
-            m2bp_1=matfile_vars['metadata']['hf_bad_m']
-            m2bp_2=matfile_vars['metadata']['hf_bad_m2']
-            m2bp=[]
-            for x in range(len(m2bp_1[0][0][0])):
-                m2bp.append(m2bp_1[0][0][0][x][0])
-            for x in range(len(m2bp_2[0][0][0])):
-                m2bp.append(m2bp_2[0][0][0][x][0])
-           
             if chanlist_varname == 'monopolar_chanlist':
+                m2bp_1=matfile_vars['metadata']['hf_bad_m']
+                m2bp_2=matfile_vars['metadata']['hf_bad_m2']
+                m2bp=[]
+                for x in range(len(m2bp_1[0][0][0])):
+                    m2bp.append(m2bp_1[0][0][0][x][0])
+                for x in range(len(m2bp_2[0][0][0])):
+                    m2bp.append(m2bp_2[0][0][0][x][0])
                 _add_events(events, matfile_vars, config.ripple_kind, ripple_subkinds, 
                             modified_chanlist, original_chanlist, rec_start_time_adj, 
                             config.ripple_on_offset, config.ripple_off_offset)
